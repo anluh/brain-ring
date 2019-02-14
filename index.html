@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Hello Socket.io</title>
+    <meta name="viewport" content="user-scalable=0">
+    <link rel="stylesheet" href="/public/styles/styles.css">
+</head>
+<body>
+    <div id="app">
+
+        <div v-if="!authorized && !admin" class="login">
+            <form @submit.prevent="authorize()">
+                <div class="team-enter">
+                    <input id="user" type="text" v-model="user" placeholder="Назва команди">
+                </div>
+                <div v-if="user === 'admin'" class="admin-pass">
+                    <input id="pass" type="password" v-model="pass" placeholder="Enter admin pass">
+                </div>
+                <button>Ok</button>
+            </form>
+
+        </div>
+
+        <div v-if="admin" class="back-office">
+        <!--<div class="back-office">-->
+
+            <div class="set-time">
+                <label>Set Time</label>
+                <input type="text" v-model.lazy="setTime">
+            </div>
+
+            <div class="teams">
+                <div v-for="team in teams" class="team">
+                    <div class="btns">
+                        <button @click="decScore(team)">‒</button>
+                        <span class="score">{{team.score}}</span>
+                        <button @click="incScore(team)">+</button>
+                        <div @click="team.modal = true" class="delete-team">
+                            <span>⨯</span>
+                            <transition name="fade">
+                                <div v-if="team.modal" class="delete-team-modal">
+                                    <p>Are you sure to delete this team?</p>
+                                    <div class="buttons">
+                                        <button @click="deleteTeam(team)" class="danger">Yes</button>
+                                        <button @click.stop="team.modal = false">No</button>
+                                    </div>
+                                </div>
+                            </transition>
+                        </div>
+                    </div>
+                    <span>{{team.name}}</span>
+                </div>
+            </div>
+
+            <div :class="{ timeGone: timeGone }" class="timer">
+                <div class="numbers">{{ timer | timeFormat }}</div>
+                <div class="timer-buttons">
+                    <button @click="timerActive = !timerActive">
+                        <span v-if="!timerActive">Start</span>
+                        <span v-if="timerActive">Stop</span>
+                    </button>
+                    <button @click="reset(); test()">Reset</button>
+                </div>
+            </div>
+
+            <div class="votes">
+
+                <div v-for="(vote, index) in sortedArray" class="vote">
+                    {{index + 1}}. Команда: {{vote.name}}
+                </div>
+            </div>
+        </div>
+
+        <div v-if="!admin && authorized" class="user-view">
+        <!--<div class="user-view">-->
+            <h1>Team {{currentUser}}</h1>
+
+            <div>
+                <button :class="{ voted: voted }" @click="sendVote()">{{currentScore}}</button>
+            </div>
+        </div>
+
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script type="text/javascript" src="public/js/vue.js"></script>
+    <script type="text/javascript" src="public/js/moment.js"></script>
+    <script>
+      let socket = io();
+
+      let app = new Vue({
+        el: '#app',
+        data() {
+          return {
+              user: '',
+              pass: '',
+              setTime: '1',
+              timer: 60000,
+              timerActive: false,
+              timeGone: false,
+              adminPass: '123',
+              authorized: false,
+              admin: false,
+              currentUser: '',
+              currentScore: 0,
+              voted: false,
+              teamss: [
+                  {
+                      name: 'Andrii',
+                      score: 0
+                  },
+                  {
+                      name: 'Roma',
+                      score: 0
+                  },
+                  {
+                      name: 'Iphoneasd',
+                      score: 0
+                  },
+              ],
+              teams: [],
+              votes: []
+          }
+        },
+          watch: {
+              setTime(value){
+                  // if(value && Number.isInteger(parseFloat(value))) this.timer = parseFloat(value) * 60000
+                  if(value) this.timer = parseFloat(value) * 60000
+              }
+          },
+        created(){
+            let getUserInfo = JSON.parse(localStorage.getItem('local'));
+
+            if(getUserInfo){
+                this.authorized = true;
+                this.currentUser = getUserInfo.name;
+                this.currentScore = getUserInfo.score;
+                this.admin = getUserInfo.admin;
+
+                if(this.admin){
+                    socket.emit('get-users');
+                }
+            }
+
+            window.onbeforeunload = ()=>{
+                socket.emit('user-disconnected', this.currentUser)
+            };
+
+            socket.on('check-connection', ()=>{
+                if(this.authorized) {
+                    let query = {};
+                    query.name = this.currentUser;
+                    query.score = this.currentScore;
+
+                    socket.emit('user-connected', query)
+                }
+            });
+
+            setInterval(() => this.updateTime(), 1000);
+
+            socket.on('vote:res', (data)=>{
+                if (this.admin) {
+
+                    let check = this.votes.find((el)=>{
+                       return el.name === data.name
+                    });
+
+                    if(!check && this.timerActive) this.votes.push(data)
+
+                }
+            });
+
+            socket.on('changeScore:res', (data)=>{
+                if (!this.admin && this.currentUser === data.name) this.currentScore = data.score;
+            });
+
+            socket.on('user-connected:res', (data)=>{
+
+                let check = this.teams.find((el)=>{
+                    return el.name === data.name
+                });
+
+                if(!check) {
+                    data.modal = false;
+                    this.teams.push(data);
+                }
+
+            });
+            socket.on('user-disconnected:res', (data)=>{
+                if (this.admin) {
+                     this.teams.forEach((team)=>{
+                        if (data === team.name) this.teams.splice(this.teams.indexOf(team), 1)
+                    });
+
+
+                }
+            });
+            socket.on('deleteTeam:res', (data)=>{
+                if(this.currentUser === data.name){
+                    localStorage.clear();
+                    location.reload();
+                }
+            });
+
+        },
+        methods: {
+            test(){
+
+            },
+            updateTime(){
+                if(this.timerActive && this.timer > 0){
+                    this.timer -= 1000
+                } else if(this.timer === 0) {
+                    this.timeGone = true;
+                }
+            },
+            authorize(){
+                if(this.user !== '') {
+                    this.currentUser = this.user;
+                    this.authorized = true;
+
+                    let query = {};
+                    query.name = this.user;
+                    query.score = 0;
+
+                    socket.emit('user-connected', query)
+                }
+                if(this.user === 'admin' && this.pass === this.adminPass){
+                    this.admin = true;
+                    socket.emit('get-users');
+                } else {
+                    this.admin = false;
+                }
+            },
+            sendVote(){
+                let query = {};
+                query.time = moment().valueOf();
+                query.name = this.currentUser;
+
+                socket.emit('vote', query);
+                this.voted = true;
+                setTimeout(()=>{
+                    this.voted = false;
+                }, 150)
+            },
+            deleteTeam(team){
+                socket.emit('deleteTeam', team);
+                team.modal = false;
+                this.teams.splice(this.teams.indexOf(team), 1)
+            },
+            reset(){
+                this.timer = this.setTime * 60000;
+                this.timerActive = false;
+                this.votes = [];
+                this.timeGone = false;
+            },
+            decScore(team){
+                team.score -= 1;
+                socket.emit('changeScore', team)
+            },
+            incScore(team){
+                team.score += 1;
+                socket.emit('changeScore', team)
+            }
+        },
+          computed: {
+              sortedArray() {
+                  function compare(a, b) {
+                     return a.time < b.time ? -1 : 0;
+                  }
+
+                  return this.votes.sort(compare);
+              }
+          },
+        filters: {
+            timeFormat(value){
+                return moment(value).format('mm:ss')
+            }
+        },
+        updated() {
+            if(this.authorized){
+                let userInfo = {};
+                userInfo.name = this.currentUser;
+                userInfo.score = this.currentScore;
+                userInfo.admin = this.admin;
+                localStorage.setItem('local', JSON.stringify(userInfo));
+            }
+        }
+      });
+      Vue.config.devtools = true;
+    </script>
+</body>
+</html>
