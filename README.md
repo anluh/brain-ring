@@ -1,17 +1,17 @@
 # Brain Ring Project
 This is project for online vote.
 
-##Requirements
+## Requirements
 Node.js, NPM
 
 Nodemon - installed globaly (for development)
  
-##Installation
+## Installation
 ```
 npm install
 ```
 
-##Usage
+## Usage
 ```
 npm start
 ```
